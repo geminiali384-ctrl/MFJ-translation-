@@ -1,0 +1,45 @@
+name: Build APK
+on:
+  push:
+    branches: [main, master]
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Generate project files
+        run: |
+          if [ -f project_bundle.py ]; then python3 project_bundle.py; fi
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: 17
+      - name: Accept Android licenses
+        run: yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: 8.9
+      - name: Build debug APK
+        shell: bash
+        run: gradle assembleDebug --no-daemon --console=plain 2>&1 | tee build.log
+      - name: Show errors
+        if: failure()
+        shell: bash
+        run: |
+          grep -E "^e: |What went wrong|Execution failed|Could not|Duplicate|error:" -A3 build.log | head -12 > errors.txt || true
+          while IFS= read -r line; do echo "::error::$line"; done < errors.txt
+      - name: Rename APK
+        run: cp app/build/outputs/apk/debug/app-debug.apk CinemaTranslateAI.apk
+      - uses: actions/upload-artifact@v4
+        with:
+          name: CinemaTranslateAI-apk
+          path: CinemaTranslateAI.apk
+      - name: Publish release (easy download)
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: build-${{ github.run_number }}
+          name: CinemaTranslate AI build ${{ github.run_number }}
+          files: CinemaTranslateAI.apk
